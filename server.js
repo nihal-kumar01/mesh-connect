@@ -1,3 +1,9 @@
+import cors from "cors";
+
+app.use(cors({
+  origin: "*", // for now (later restrict)
+}));
+
 const WebSocket = require("ws");
 
 const PORT = process.env.PORT || 3001;
