@@ -1,5 +1,5 @@
-let peerConnections = {}; // 🔥 multiple peers
-let dataChannels = {}; // 🔥 store channels per peer
+let peerConnections = {};
+let dataChannels = {};
 let myId = null;
 let socket;
 
@@ -33,7 +33,6 @@ export const initSocket = () => {
     // 👥 Existing peers
     if (data.type === "peers") {
       console.log("👥 Peers:", data.peers);
-
       data.peers.forEach((peerId) => {
         createPeer(peerId, true);
       });
@@ -46,11 +45,9 @@ export const initSocket = () => {
       const pcData = createPeer(data.from, false);
       const pc = pcData.pc;
 
-      await pc.setRemoteDescription(
-        new RTCSessionDescription(data)
-      );
+      await pc.setRemoteDescription(new RTCSessionDescription(data));
 
-      // 🔥 Apply queued ICE
+      // Apply queued ICE
       for (const candidate of pcData.pendingCandidates) {
         await pc.addIceCandidate(new RTCIceCandidate(candidate));
       }
@@ -75,11 +72,8 @@ export const initSocket = () => {
       if (pcData) {
         const pc = pcData.pc;
 
-        await pc.setRemoteDescription(
-          new RTCSessionDescription(data)
-        );
+        await pc.setRemoteDescription(new RTCSessionDescription(data));
 
-        // 🔥 Apply queued ICE
         for (const candidate of pcData.pendingCandidates) {
           await pc.addIceCandidate(new RTCIceCandidate(candidate));
         }
@@ -98,9 +92,7 @@ export const initSocket = () => {
           if (!pc.remoteDescription) {
             pcData.pendingCandidates.push(data.candidate);
           } else {
-            await pc.addIceCandidate(
-              new RTCIceCandidate(data.candidate)
-            );
+            await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
           }
         } catch (e) {
           console.error("❌ ICE error:", e);
@@ -124,13 +116,12 @@ function createPeer(peerId, isInitiator) {
 
   const pc = new RTCPeerConnection(config);
 
-  // 🔥 DEBUG LOGS (IMPORTANT)
   pc.onconnectionstatechange = () => {
-    console.log(`🔗 [${peerId}] Connection state:`, pc.connectionState);
+    console.log(`🔗 [${peerId}]`, pc.connectionState);
   };
 
   pc.oniceconnectionstatechange = () => {
-    console.log(`🧊 [${peerId}] ICE state:`, pc.iceConnectionState);
+    console.log(`🧊 [${peerId}]`, pc.iceConnectionState);
   };
 
   peerConnections[peerId] = {
@@ -140,7 +131,7 @@ function createPeer(peerId, isInitiator) {
 
   // ICE handling
   pc.onicecandidate = (event) => {
-    if (event.candidate) {
+    if (event.candidate && socket?.readyState === WebSocket.OPEN) {
       socket.send(
         JSON.stringify({
           type: "candidate",
@@ -157,9 +148,18 @@ function createPeer(peerId, isInitiator) {
     channel = pc.createDataChannel("chat");
     setupChannel(peerId, channel);
 
-    (async () => {
+    // 🔥 CRITICAL FIX: WAIT FOR SOCKET BEFORE OFFER
+    const sendOffer = async () => {
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
+        console.log("⏳ Waiting for socket before sending offer...");
+        setTimeout(sendOffer, 300);
+        return;
+      }
+
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
+
+      console.log("📤 Sending offer to", peerId);
 
       socket.send(
         JSON.stringify({
@@ -167,7 +167,9 @@ function createPeer(peerId, isInitiator) {
           to: peerId,
         })
       );
-    })();
+    };
+
+    sendOffer();
   } else {
     pc.ondatachannel = (event) => {
       channel = event.channel;
