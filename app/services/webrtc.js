@@ -17,17 +17,20 @@ export const initSocket = () => {
 
   socket.onmessage = async (event) => {
     const data = JSON.parse(event.data);
+
+    // 🆕 New peer joined
     if (data.type === "new-peer") {
-    console.log("🆕 New peer joined:", data.peerId);
-    createPeer(data.peerId, true);
-}
+      console.log("🆕 New peer joined:", data.peerId);
+      createPeer(data.peerId, true);
+    }
+
     // 🆔 My ID
     if (data.type === "init") {
       myId = data.id;
       console.log("🆔 My ID:", myId);
     }
 
-    // 👥 Existing peers → initiate connections
+    // 👥 Existing peers
     if (data.type === "peers") {
       console.log("👥 Peers:", data.peers);
 
@@ -43,12 +46,14 @@ export const initSocket = () => {
       const pcData = createPeer(data.from, false);
       const pc = pcData.pc;
 
-      await pc.setRemoteDescription(data);
+      await pc.setRemoteDescription(
+        new RTCSessionDescription(data)
+      );
 
-      // 🔥 Flush queued ICE candidates
-      pcData.pendingCandidates.forEach(async (candidate) => {
+      // 🔥 Apply queued ICE
+      for (const candidate of pcData.pendingCandidates) {
         await pc.addIceCandidate(new RTCIceCandidate(candidate));
-      });
+      }
       pcData.pendingCandidates = [];
 
       const answer = await pc.createAnswer();
@@ -70,12 +75,14 @@ export const initSocket = () => {
       if (pcData) {
         const pc = pcData.pc;
 
-        await pc.setRemoteDescription(data);
+        await pc.setRemoteDescription(
+          new RTCSessionDescription(data)
+        );
 
-        // 🔥 Flush queued ICE candidates
-        pcData.pendingCandidates.forEach(async (candidate) => {
+        // 🔥 Apply queued ICE
+        for (const candidate of pcData.pendingCandidates) {
           await pc.addIceCandidate(new RTCIceCandidate(candidate));
-        });
+        }
         pcData.pendingCandidates = [];
       }
     }
@@ -89,7 +96,6 @@ export const initSocket = () => {
 
         try {
           if (!pc.remoteDescription) {
-            // ❗ Queue candidate
             pcData.pendingCandidates.push(data.candidate);
           } else {
             await pc.addIceCandidate(
@@ -118,9 +124,18 @@ function createPeer(peerId, isInitiator) {
 
   const pc = new RTCPeerConnection(config);
 
+  // 🔥 DEBUG LOGS (IMPORTANT)
+  pc.onconnectionstatechange = () => {
+    console.log(`🔗 [${peerId}] Connection state:`, pc.connectionState);
+  };
+
+  pc.oniceconnectionstatechange = () => {
+    console.log(`🧊 [${peerId}] ICE state:`, pc.iceConnectionState);
+  };
+
   peerConnections[peerId] = {
     pc,
-    pendingCandidates: [], // 🔥 IMPORTANT
+    pendingCandidates: [],
   };
 
   // ICE handling
@@ -136,23 +151,23 @@ function createPeer(peerId, isInitiator) {
     }
   };
 
-  // Data channel
   let channel;
 
   if (isInitiator) {
     channel = pc.createDataChannel("chat");
     setupChannel(peerId, channel);
 
-    pc.createOffer().then(async (offer) => {
+    (async () => {
+      const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
       socket.send(
         JSON.stringify({
-          ...offer,
+          ...pc.localDescription,
           to: peerId,
         })
       );
-    });
+    })();
   } else {
     pc.ondatachannel = (event) => {
       channel = event.channel;
@@ -192,7 +207,7 @@ export const startCall = async () => {
   console.log("✅ Ready for peers");
 };
 
-// 📤 Send message to ALL peers
+// 📤 Send message
 export const sendMessage = (msg) => {
   Object.values(dataChannels).forEach((channel) => {
     if (channel.readyState === "open") {
