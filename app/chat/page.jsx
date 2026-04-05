@@ -6,6 +6,8 @@ import {
   sendMessage as rtcSend,
 } from "../services/webrtc";
 
+import { initSocket } from "../services/webrtc";
+
 import { useState, useEffect, useRef } from "react";
 
 export default function ChatPage() {
@@ -16,7 +18,7 @@ export default function ChatPage() {
 
   // 🔌 Init WebSocket once
   useEffect(() => {
-    initSocket();
+    initSocket(); // 🔥 ADD THIS LINE
   }, []);
 
   // 🔽 Auto scroll
