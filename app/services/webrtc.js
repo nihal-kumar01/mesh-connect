@@ -18,19 +18,16 @@ export const initSocket = () => {
   socket.onmessage = async (event) => {
     const data = JSON.parse(event.data);
 
-    // 🆕 New peer joined
     if (data.type === "new-peer") {
       console.log("🆕 New peer joined:", data.peerId);
       createPeer(data.peerId, true);
     }
 
-    // 🆔 My ID
     if (data.type === "init") {
       myId = data.id;
       console.log("🆔 My ID:", myId);
     }
 
-    // 👥 Existing peers
     if (data.type === "peers") {
       console.log("👥 Peers:", data.peers);
       data.peers.forEach((peerId) => {
@@ -38,7 +35,6 @@ export const initSocket = () => {
       });
     }
 
-    // 📥 Offer
     if (data.type === "offer") {
       console.log("📥 Offer from:", data.from);
 
@@ -47,7 +43,6 @@ export const initSocket = () => {
 
       await pc.setRemoteDescription(new RTCSessionDescription(data));
 
-      // Apply queued ICE
       for (const candidate of pcData.pendingCandidates) {
         await pc.addIceCandidate(new RTCIceCandidate(candidate));
       }
@@ -64,7 +59,6 @@ export const initSocket = () => {
       );
     }
 
-    // 📥 Answer
     if (data.type === "answer") {
       console.log("📥 Answer from:", data.from);
 
@@ -81,7 +75,6 @@ export const initSocket = () => {
       }
     }
 
-    // 📥 ICE Candidate
     if (data.type === "candidate") {
       const pcData = peerConnections[data.from];
 
@@ -124,12 +117,6 @@ function createPeer(peerId, isInitiator) {
     console.log(`🧊 [${peerId}]`, pc.iceConnectionState);
   };
 
-  peerConnections[peerId] = {
-    pc,
-    pendingCandidates: [],
-  };
-
-  // ICE handling
   pc.onicecandidate = (event) => {
     if (event.candidate && socket?.readyState === WebSocket.OPEN) {
       socket.send(
@@ -142,16 +129,19 @@ function createPeer(peerId, isInitiator) {
     }
   };
 
+  peerConnections[peerId] = {
+    pc,
+    pendingCandidates: [],
+  };
+
   let channel;
 
   if (isInitiator) {
     channel = pc.createDataChannel("chat");
     setupChannel(peerId, channel);
 
-    // 🔥 CRITICAL FIX: WAIT FOR SOCKET BEFORE OFFER
     const sendOffer = async () => {
       if (!socket || socket.readyState !== WebSocket.OPEN) {
-        console.log("⏳ Waiting for socket before sending offer...");
         setTimeout(sendOffer, 300);
         return;
       }
@@ -199,8 +189,6 @@ export const startCall = async () => {
   console.log("🚀 Start clicked");
 
   if (!socket || socket.readyState !== WebSocket.OPEN) {
-    console.log("⏳ Waiting for socket...");
-
     await new Promise((resolve) => {
       socket.onopen = () => resolve();
     });
