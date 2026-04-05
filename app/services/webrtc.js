@@ -63,10 +63,17 @@ export const initSocket = () => {
     }
 
     // 📥 ICE Candidate
-    if (data.candidate) {
+    if (data.type === "candidate") {
       const pc = peerConnections[data.from];
-      if (pc) {
-        await pc.addIceCandidate(data);
+
+      if (pc && data.candidate) {
+        try {
+          await pc.addIceCandidate(
+            new RTCIceCandidate(data.candidate)
+          );
+        } catch (e) {
+          console.error("❌ ICE error:", e);
+        }
       }
     }
   };
@@ -90,12 +97,11 @@ function createPeer(peerId, isInitiator) {
   // ICE handling
   pc.onicecandidate = (event) => {
     if (event.candidate) {
-      socket.send(
-        JSON.stringify({
-          candidate: event.candidate,
-          to: peerId,
-        })
-      );
+      socket.send(JSON.stringify({
+        type: "candidate",
+        candidate: event.candidate,
+        to: peerId,
+      }));
     }
   };
 
