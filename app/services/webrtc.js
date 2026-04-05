@@ -80,10 +80,28 @@ function setupDataChannel() {
 
 // 🚀 Start call
 export const startCall = async () => {
+  console.log("🚀 Start button clicked");
+
+  if (!socket || socket.readyState !== WebSocket.OPEN) {
+    console.log("⏳ Waiting for socket...");
+
+    await new Promise((resolve) => {
+      socket.onopen = () => {
+        console.log("🟢 Socket ready");
+        resolve();
+      };
+    });
+  }
+
+  console.log("🔗 Creating connection...");
   await createConnection();
 
+  console.log("📡 Creating offer...");
   const offer = await peerConnection.createOffer();
+
   await peerConnection.setLocalDescription(offer);
+
+  console.log("📤 Sending offer:", offer);
 
   socket.send(JSON.stringify(offer));
 };
