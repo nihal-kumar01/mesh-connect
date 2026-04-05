@@ -2,12 +2,12 @@ let peerConnections = {};
 let dataChannels = {};
 let myId = null;
 let socket;
+let allPeers = []; // 🔥 IMPORTANT
 
 const config = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
 };
 
-// 🔌 Init WebSocket
 export const initSocket = () => {
   socket = new WebSocket("wss://mesh-connect-production-c44a.up.railway.app");
 
@@ -20,7 +20,7 @@ export const initSocket = () => {
 
     if (data.type === "new-peer") {
       console.log("🆕 New peer joined:", data.peerId);
-      createPeer(data.peerId, true);
+      allPeers.push(data.peerId); // 🔥 store
     }
 
     if (data.type === "init") {
@@ -30,9 +30,7 @@ export const initSocket = () => {
 
     if (data.type === "peers") {
       console.log("👥 Peers:", data.peers);
-      data.peers.forEach((peerId) => {
-        createPeer(peerId, true);
-      });
+      allPeers = data.peers; // 🔥 store peers
     }
 
     if (data.type === "offer") {
@@ -51,17 +49,10 @@ export const initSocket = () => {
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
 
-      socket.send(
-        JSON.stringify({
-          ...pc.localDescription,
-          to: data.from,
-        })
-      );
+      socket.send(JSON.stringify({ ...pc.localDescription, to: data.from }));
     }
 
     if (data.type === "answer") {
-      console.log("📥 Answer from:", data.from);
-
       const pcData = peerConnections[data.from];
       if (pcData) {
         const pc = pcData.pc;
@@ -81,29 +72,17 @@ export const initSocket = () => {
       if (pcData && data.candidate) {
         const pc = pcData.pc;
 
-        try {
-          if (!pc.remoteDescription) {
-            pcData.pendingCandidates.push(data.candidate);
-          } else {
-            await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
-          }
-        } catch (e) {
-          console.error("❌ ICE error:", e);
+        if (!pc.remoteDescription) {
+          pcData.pendingCandidates.push(data.candidate);
+        } else {
+          await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
         }
       }
     }
   };
-
-  socket.onerror = (e) => {
-    console.error("❌ WebSocket error:", e);
-  };
-
-  socket.onclose = () => {
-    console.log("🔴 WebSocket closed");
-  };
 };
 
-// 🔗 Create peer connection
+// 🔗 Create peer
 function createPeer(peerId, isInitiator) {
   if (peerConnections[peerId]) return peerConnections[peerId];
 
@@ -113,12 +92,8 @@ function createPeer(peerId, isInitiator) {
     console.log(`🔗 [${peerId}]`, pc.connectionState);
   };
 
-  pc.oniceconnectionstatechange = () => {
-    console.log(`🧊 [${peerId}]`, pc.iceConnectionState);
-  };
-
   pc.onicecandidate = (event) => {
-    if (event.candidate && socket?.readyState === WebSocket.OPEN) {
+    if (event.candidate && socket.readyState === WebSocket.OPEN) {
       socket.send(
         JSON.stringify({
           type: "candidate",
@@ -129,10 +104,7 @@ function createPeer(peerId, isInitiator) {
     }
   };
 
-  peerConnections[peerId] = {
-    pc,
-    pendingCandidates: [],
-  };
+  peerConnections[peerId] = { pc, pendingCandidates: [] };
 
   let channel;
 
@@ -140,64 +112,53 @@ function createPeer(peerId, isInitiator) {
     channel = pc.createDataChannel("chat");
     setupChannel(peerId, channel);
 
-    const sendOffer = async () => {
-      if (!socket || socket.readyState !== WebSocket.OPEN) {
-        setTimeout(sendOffer, 300);
-        return;
-      }
-
+    (async () => {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      console.log("📤 Sending offer to", peerId);
-
-      socket.send(
-        JSON.stringify({
-          ...pc.localDescription,
-          to: peerId,
-        })
-      );
-    };
-
-    sendOffer();
+      socket.send(JSON.stringify({ ...pc.localDescription, to: peerId }));
+    })();
   } else {
     pc.ondatachannel = (event) => {
-      channel = event.channel;
-      setupChannel(peerId, channel);
+      setupChannel(peerId, event.channel);
     };
   }
 
   return peerConnections[peerId];
 }
 
-// 💬 Setup data channel
+// 💬 Channel
 function setupChannel(peerId, channel) {
   dataChannels[peerId] = channel;
 
   channel.onopen = () => {
-    console.log("🟢 Connected to peer:", peerId);
+    console.log("🟢 Connected:", peerId);
     window.onConnected?.();
   };
 
-  channel.onmessage = (event) => {
-    window.receiveMessage?.(event.data);
+  channel.onmessage = (e) => {
+    window.receiveMessage?.(e.data);
   };
 }
 
-// 🚀 Start
+// 🚀 START BUTTON FIX (🔥 MAIN FIX)
 export const startCall = async () => {
   console.log("🚀 Start clicked");
 
   if (!socket || socket.readyState !== WebSocket.OPEN) {
     await new Promise((resolve) => {
-      socket.onopen = () => resolve();
+      socket.onopen = resolve;
     });
   }
 
-  console.log("✅ Ready for peers");
+  console.log("🔥 Connecting to peers:", allPeers);
+
+  allPeers.forEach((peerId) => {
+    createPeer(peerId, true); // 🔥 FORCE connection
+  });
 };
 
-// 📤 Send message
+// 📤 Send
 export const sendMessage = (msg) => {
   Object.values(dataChannels).forEach((channel) => {
     if (channel.readyState === "open") {
