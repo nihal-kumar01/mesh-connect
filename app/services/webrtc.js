@@ -1,5 +1,6 @@
-let peerConnection;
-let dataChannel;
+let peerConnections = {}; // 🔥 multiple peers
+let dataChannels = {}; // 🔥 store channels per peer
+let myId = null;
 let socket;
 
 const config = {
@@ -17,100 +18,148 @@ export const initSocket = () => {
   socket.onmessage = async (event) => {
     const data = JSON.parse(event.data);
 
-    // 📩 OFFER RECEIVED
+    // 🆔 My ID
+    if (data.type === "init") {
+      myId = data.id;
+      console.log("🆔 My ID:", myId);
+    }
+
+    // 👥 Existing peers → initiate connections
+    if (data.type === "peers") {
+      console.log("👥 Peers:", data.peers);
+
+      data.peers.forEach((peerId) => {
+        createPeer(peerId, true);
+      });
+    }
+
+    // 📥 Offer
     if (data.type === "offer") {
-      await createConnection();
+      console.log("📥 Offer from:", data.from);
 
-      await peerConnection.setRemoteDescription(data);
+      const pc = createPeer(data.from, false);
 
-      const answer = await peerConnection.createAnswer();
-      await peerConnection.setLocalDescription(answer);
+      await pc.setRemoteDescription(data);
 
-      socket.send(JSON.stringify(peerConnection.localDescription));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+
+      socket.send(
+        JSON.stringify({
+          ...pc.localDescription,
+          to: data.from,
+        })
+      );
     }
 
-    // 📩 ANSWER RECEIVED
+    // 📥 Answer
     if (data.type === "answer") {
-      await peerConnection.setRemoteDescription(data);
+      console.log("📥 Answer from:", data.from);
+
+      const pc = peerConnections[data.from];
+      if (pc) {
+        await pc.setRemoteDescription(data);
+      }
     }
 
-    // 📩 ICE CANDIDATE
+    // 📥 ICE Candidate
     if (data.candidate) {
-      try {
-        await peerConnection.addIceCandidate(data);
-      } catch (e) {
-        console.error("ICE error:", e);
+      const pc = peerConnections[data.from];
+      if (pc) {
+        await pc.addIceCandidate(data);
       }
     }
   };
-};
 
-// 🔗 Create connection
-export const createConnection = async () => {
-  peerConnection = new RTCPeerConnection(config);
-
-  // create channel (only once)
-  dataChannel = peerConnection.createDataChannel("chat");
-  setupDataChannel();
-
-  peerConnection.ondatachannel = (event) => {
-    dataChannel = event.channel;
-    setupDataChannel();
+  socket.onerror = (e) => {
+    console.error("❌ WebSocket error:", e);
   };
 
-  // ICE
-  peerConnection.onicecandidate = (event) => {
+  socket.onclose = () => {
+    console.log("🔴 WebSocket closed");
+  };
+};
+
+// 🔗 Create peer connection
+function createPeer(peerId, isInitiator) {
+  if (peerConnections[peerId]) return peerConnections[peerId];
+
+  const pc = new RTCPeerConnection(config);
+  peerConnections[peerId] = pc;
+
+  // ICE handling
+  pc.onicecandidate = (event) => {
     if (event.candidate) {
-      socket.send(JSON.stringify(event.candidate));
+      socket.send(
+        JSON.stringify({
+          candidate: event.candidate,
+          to: peerId,
+        })
+      );
     }
   };
-};
 
-// 💬 Data channel
-function setupDataChannel() {
-  dataChannel.onopen = () => {
-    console.log("🟢 P2P Connected");
+  // Data channel
+  let channel;
+
+  if (isInitiator) {
+    channel = pc.createDataChannel("chat");
+    setupChannel(peerId, channel);
+
+    pc.createOffer().then((offer) => {
+      pc.setLocalDescription(offer);
+
+      socket.send(
+        JSON.stringify({
+          ...offer,
+          to: peerId,
+        })
+      );
+    });
+  } else {
+    pc.ondatachannel = (event) => {
+      channel = event.channel;
+      setupChannel(peerId, channel);
+    };
+  }
+
+  return pc;
+}
+
+// 💬 Setup data channel
+function setupChannel(peerId, channel) {
+  dataChannels[peerId] = channel;
+
+  channel.onopen = () => {
+    console.log("🟢 Connected to peer:", peerId);
     window.onConnected?.();
   };
 
-  dataChannel.onmessage = (event) => {
+  channel.onmessage = (event) => {
     window.receiveMessage?.(event.data);
   };
 }
 
-// 🚀 Start call
+// 🚀 Start (no manual offer anymore)
 export const startCall = async () => {
-  console.log("🚀 Start button clicked");
+  console.log("🚀 Start clicked");
 
   if (!socket || socket.readyState !== WebSocket.OPEN) {
     console.log("⏳ Waiting for socket...");
 
     await new Promise((resolve) => {
-      socket.onopen = () => {
-        console.log("🟢 Socket ready");
-        resolve();
-      };
+      socket.onopen = () => resolve();
     });
   }
 
-  console.log("🔗 Creating connection...");
-  await createConnection();
-
-  console.log("📡 Creating offer...");
-  const offer = await peerConnection.createOffer();
-
-  await peerConnection.setLocalDescription(offer);
-
-  console.log("📤 Sending offer:", offer);
-
-  socket.send(JSON.stringify(offer));
+  console.log("✅ Ready for peers");
 };
 
-// 📤 Send message
+// 📤 Send message to ALL peers
 export const sendMessage = (msg) => {
-  if (dataChannel?.readyState === "open") {
-    dataChannel.send(msg);
-  } else {
-    console.log("❌ Not connected yet");
-  }
+  Object.values(dataChannels).forEach((channel) => {
+    if (channel.readyState === "open") {
+      channel.send(msg);
+    }
+  });
 };
