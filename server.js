@@ -1,9 +1,12 @@
 const WebSocket = require("ws");
+const http = require("http");
 
 const PORT = process.env.PORT || 3001;
-const wss = new WebSocket.Server({ port: PORT });
 
-let clients = {}; // id → ws
+const server = http.createServer();
+const wss = new WebSocket.Server({ server });
+
+let clients = {};
 
 function generateId() {
   return Math.random().toString(36).substring(2, 9);
@@ -15,7 +18,7 @@ wss.on("connection", (ws) => {
 
   console.log("🟢 New client:", id);
 
-  // ✅ ADD THIS HERE
+  // 🔥 Notify existing users
   Object.keys(clients).forEach((clientId) => {
     if (clientId !== id) {
       clients[clientId].send(
@@ -27,10 +30,8 @@ wss.on("connection", (ws) => {
     }
   });
 
-  // 🔥 Send own ID
   ws.send(JSON.stringify({ type: "init", id }));
 
-  // 🔥 Send list of existing users
   ws.send(
     JSON.stringify({
       type: "peers",
@@ -41,7 +42,8 @@ wss.on("connection", (ws) => {
   ws.on("message", (message) => {
     const data = JSON.parse(message);
 
-    // 🔥 Forward message to specific peer
+    console.log("📩 Message:", data.type, "from", id);
+
     if (data.to && clients[data.to]) {
       clients[data.to].send(
         JSON.stringify({
@@ -58,4 +60,6 @@ wss.on("connection", (ws) => {
   });
 });
 
-console.log("🚀 WebSocket server running on port", PORT);
+server.listen(PORT, () => {
+  console.log("🚀 Server running on port", PORT);
+});
