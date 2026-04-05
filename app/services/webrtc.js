@@ -2,7 +2,7 @@ let peerConnections = {};
 let dataChannels = {};
 let myId = null;
 let socket;
-let allPeers = []; // 🔥 IMPORTANT
+let allPeers = [];
 
 const config = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
@@ -20,7 +20,9 @@ export const initSocket = () => {
 
     if (data.type === "new-peer") {
       console.log("🆕 New peer joined:", data.peerId);
-      allPeers.push(data.peerId); // 🔥 store
+      if (!allPeers.includes(data.peerId)) {
+        allPeers.push(data.peerId);
+      }
     }
 
     if (data.type === "init") {
@@ -30,7 +32,7 @@ export const initSocket = () => {
 
     if (data.type === "peers") {
       console.log("👥 Peers:", data.peers);
-      allPeers = data.peers; // 🔥 store peers
+      allPeers = data.peers;
     }
 
     if (data.type === "offer") {
@@ -39,7 +41,12 @@ export const initSocket = () => {
       const pcData = createPeer(data.from, false);
       const pc = pcData.pc;
 
-      await pc.setRemoteDescription(new RTCSessionDescription(data));
+      await pc.setRemoteDescription(
+        new RTCSessionDescription({
+          type: data.type,
+          sdp: data.sdp,
+        })
+      );
 
       for (const candidate of pcData.pendingCandidates) {
         await pc.addIceCandidate(new RTCIceCandidate(candidate));
@@ -49,15 +56,28 @@ export const initSocket = () => {
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
 
-      socket.send(JSON.stringify({ ...pc.localDescription, to: data.from }));
+      socket.send(
+        JSON.stringify({
+          type: pc.localDescription.type,
+          sdp: pc.localDescription.sdp,
+          to: data.from,
+        })
+      );
     }
 
     if (data.type === "answer") {
+      console.log("📥 Answer from:", data.from);
+
       const pcData = peerConnections[data.from];
       if (pcData) {
         const pc = pcData.pc;
 
-        await pc.setRemoteDescription(new RTCSessionDescription(data));
+        await pc.setRemoteDescription(
+          new RTCSessionDescription({
+            type: data.type,
+            sdp: data.sdp,
+          })
+        );
 
         for (const candidate of pcData.pendingCandidates) {
           await pc.addIceCandidate(new RTCIceCandidate(candidate));
@@ -75,7 +95,9 @@ export const initSocket = () => {
         if (!pc.remoteDescription) {
           pcData.pendingCandidates.push(data.candidate);
         } else {
-          await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+          await pc.addIceCandidate(
+            new RTCIceCandidate(data.candidate)
+          );
         }
       }
     }
@@ -106,17 +128,23 @@ function createPeer(peerId, isInitiator) {
 
   peerConnections[peerId] = { pc, pendingCandidates: [] };
 
-  let channel;
-
   if (isInitiator) {
-    channel = pc.createDataChannel("chat");
+    const channel = pc.createDataChannel("chat");
     setupChannel(peerId, channel);
 
     (async () => {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      socket.send(JSON.stringify({ ...pc.localDescription, to: peerId }));
+      console.log("📤 Sending offer to", peerId);
+
+      socket.send(
+        JSON.stringify({
+          type: pc.localDescription.type,
+          sdp: pc.localDescription.sdp,
+          to: peerId,
+        })
+      );
     })();
   } else {
     pc.ondatachannel = (event) => {
@@ -141,7 +169,7 @@ function setupChannel(peerId, channel) {
   };
 }
 
-// 🚀 START BUTTON FIX (🔥 MAIN FIX)
+// 🚀 Start
 export const startCall = async () => {
   console.log("🚀 Start clicked");
 
@@ -154,7 +182,7 @@ export const startCall = async () => {
   console.log("🔥 Connecting to peers:", allPeers);
 
   allPeers.forEach((peerId) => {
-    createPeer(peerId, true); // 🔥 FORCE connection
+    createPeer(peerId, true);
   });
 };
 
