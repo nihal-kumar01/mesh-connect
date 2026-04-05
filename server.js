@@ -18,7 +18,18 @@ wss.on("connection", (ws) => {
 
   console.log("🟢 New client:", id);
 
-  // 🔥 Notify existing users
+  // Send own ID
+  ws.send(JSON.stringify({ type: "init", id }));
+
+  // Send peers
+  ws.send(
+    JSON.stringify({
+      type: "peers",
+      peers: Object.keys(clients).filter((c) => c !== id),
+    })
+  );
+
+  // 🔥 Notify others
   Object.keys(clients).forEach((clientId) => {
     if (clientId !== id) {
       clients[clientId].send(
@@ -30,27 +41,23 @@ wss.on("connection", (ws) => {
     }
   });
 
-  ws.send(JSON.stringify({ type: "init", id }));
-
-  ws.send(
-    JSON.stringify({
-      type: "peers",
-      peers: Object.keys(clients).filter((c) => c !== id),
-    })
-  );
-
   ws.on("message", (message) => {
     const data = JSON.parse(message);
 
-    console.log("📩 Message:", data.type, "from", id);
+    console.log("📩 Incoming:", data.type, "from", id);
 
+    // 🔥 RELAY TO TARGET
     if (data.to && clients[data.to]) {
+      console.log("➡️ Sending to", data.to);
+
       clients[data.to].send(
         JSON.stringify({
           ...data,
           from: id,
         })
       );
+    } else {
+      console.log("⚠️ Target not found:", data.to);
     }
   });
 
