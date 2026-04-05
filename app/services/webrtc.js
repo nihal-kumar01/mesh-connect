@@ -9,7 +9,7 @@ const config = {
 };
 
 export const initSocket = () => {
-  socket = new WebSocket("wss://mesh-connect-production-c44a.up.railway.app");
+  socket = new WebSocket("wss://mesh-connect-production-47f2.up.railway.app");
 
   socket.onopen = () => {
     console.log("🟢 Connected to signaling server");
