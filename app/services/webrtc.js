@@ -17,7 +17,10 @@ export const initSocket = () => {
 
   socket.onmessage = async (event) => {
     const data = JSON.parse(event.data);
-
+    if (data.type === "new-peer") {
+    console.log("🆕 New peer joined:", data.peerId);
+    createPeer(data.peerId, true);
+}
     // 🆔 My ID
     if (data.type === "init") {
       myId = data.id;
@@ -37,9 +40,16 @@ export const initSocket = () => {
     if (data.type === "offer") {
       console.log("📥 Offer from:", data.from);
 
-      const pc = createPeer(data.from, false);
+      const pcData = createPeer(data.from, false);
+      const pc = pcData.pc;
 
       await pc.setRemoteDescription(data);
+
+      // 🔥 Flush queued ICE candidates
+      pcData.pendingCandidates.forEach(async (candidate) => {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      });
+      pcData.pendingCandidates = [];
 
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
@@ -56,21 +66,36 @@ export const initSocket = () => {
     if (data.type === "answer") {
       console.log("📥 Answer from:", data.from);
 
-      const pc = peerConnections[data.from];
-      if (pc) {
+      const pcData = peerConnections[data.from];
+      if (pcData) {
+        const pc = pcData.pc;
+
         await pc.setRemoteDescription(data);
+
+        // 🔥 Flush queued ICE candidates
+        pcData.pendingCandidates.forEach(async (candidate) => {
+          await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        });
+        pcData.pendingCandidates = [];
       }
     }
 
     // 📥 ICE Candidate
     if (data.type === "candidate") {
-      const pc = peerConnections[data.from];
+      const pcData = peerConnections[data.from];
 
-      if (pc && data.candidate) {
+      if (pcData && data.candidate) {
+        const pc = pcData.pc;
+
         try {
-          await pc.addIceCandidate(
-            new RTCIceCandidate(data.candidate)
-          );
+          if (!pc.remoteDescription) {
+            // ❗ Queue candidate
+            pcData.pendingCandidates.push(data.candidate);
+          } else {
+            await pc.addIceCandidate(
+              new RTCIceCandidate(data.candidate)
+            );
+          }
         } catch (e) {
           console.error("❌ ICE error:", e);
         }
@@ -92,16 +117,22 @@ function createPeer(peerId, isInitiator) {
   if (peerConnections[peerId]) return peerConnections[peerId];
 
   const pc = new RTCPeerConnection(config);
-  peerConnections[peerId] = pc;
+
+  peerConnections[peerId] = {
+    pc,
+    pendingCandidates: [], // 🔥 IMPORTANT
+  };
 
   // ICE handling
   pc.onicecandidate = (event) => {
     if (event.candidate) {
-      socket.send(JSON.stringify({
-        type: "candidate",
-        candidate: event.candidate,
-        to: peerId,
-      }));
+      socket.send(
+        JSON.stringify({
+          type: "candidate",
+          candidate: event.candidate,
+          to: peerId,
+        })
+      );
     }
   };
 
@@ -112,8 +143,8 @@ function createPeer(peerId, isInitiator) {
     channel = pc.createDataChannel("chat");
     setupChannel(peerId, channel);
 
-    pc.createOffer().then((offer) => {
-      pc.setLocalDescription(offer);
+    pc.createOffer().then(async (offer) => {
+      await pc.setLocalDescription(offer);
 
       socket.send(
         JSON.stringify({
@@ -129,7 +160,7 @@ function createPeer(peerId, isInitiator) {
     };
   }
 
-  return pc;
+  return peerConnections[peerId];
 }
 
 // 💬 Setup data channel
@@ -146,7 +177,7 @@ function setupChannel(peerId, channel) {
   };
 }
 
-// 🚀 Start (no manual offer anymore)
+// 🚀 Start
 export const startCall = async () => {
   console.log("🚀 Start clicked");
 

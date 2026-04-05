@@ -6,8 +6,6 @@ import {
   sendMessage as rtcSend,
 } from "../services/webrtc";
 
-import { initSocket } from "../services/webrtc";
-
 import { useState, useEffect, useRef } from "react";
 
 export default function ChatPage() {

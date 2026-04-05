@@ -1,15 +1,9 @@
-import cors from "cors";
-
-app.use(cors({
-  origin: "*", // for now (later restrict)
-}));
-
 const WebSocket = require("ws");
 
 const PORT = process.env.PORT || 3001;
 const wss = new WebSocket.Server({ port: PORT });
 
-let clients = {}; // 🔥 id → ws
+let clients = {}; // id → ws
 
 function generateId() {
   return Math.random().toString(36).substring(2, 9);
@@ -20,6 +14,18 @@ wss.on("connection", (ws) => {
   clients[id] = ws;
 
   console.log("🟢 New client:", id);
+
+  // ✅ ADD THIS HERE
+  Object.keys(clients).forEach((clientId) => {
+    if (clientId !== id) {
+      clients[clientId].send(
+        JSON.stringify({
+          type: "new-peer",
+          peerId: id,
+        })
+      );
+    }
+  });
 
   // 🔥 Send own ID
   ws.send(JSON.stringify({ type: "init", id }));
@@ -35,7 +41,7 @@ wss.on("connection", (ws) => {
   ws.on("message", (message) => {
     const data = JSON.parse(message);
 
-    // 🔥 Send to specific peer
+    // 🔥 Forward message to specific peer
     if (data.to && clients[data.to]) {
       clients[data.to].send(
         JSON.stringify({
@@ -52,4 +58,4 @@ wss.on("connection", (ws) => {
   });
 });
 
-console.log("🚀 WebSocket server running...");
+console.log("🚀 WebSocket server running on port", PORT);
