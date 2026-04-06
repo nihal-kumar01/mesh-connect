@@ -78,36 +78,39 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="h-screen w-full overflow-x-hidden bg-[#0B0F14] text-white flex flex-col">
+    <div className="h-[100dvh] w-full overflow-hidden bg-[#0B0F14] text-white flex flex-col">
 
-      {/* Banner */}
-      <div className="bg-yellow-500 text-black text-center py-1 text-xs sm:text-sm">
-        ⚠ Mesh Network Active (P2P)
+      {/* 🔥 FIXED HEADER SECTION */}
+      <div className="shrink-0">
+        {/* Banner */}
+        <div className="bg-yellow-500 text-black text-center py-1 text-xs sm:text-sm">
+          ⚠ Mesh Network Active (P2P)
+        </div>
+
+        {/* Start Button */}
+        <div className="p-2 flex justify-center bg-[#121821]">
+          <button
+            className="bg-blue-500 px-3 py-1 text-sm rounded-md"
+            onClick={async () => {
+              await startCall();
+            }}
+          >
+            Start Network
+          </button>
+        </div>
+
+        {/* Status */}
+        <div className="text-center text-xs py-1">
+          {connected ? (
+            <span className="text-green-400">🟢 Connected</span>
+          ) : (
+            <span className="text-red-400">🔴 Waiting...</span>
+          )}
+        </div>
       </div>
 
-      {/* Start Button */}
-      <div className="p-2 flex justify-center bg-[#121821]">
-        <button
-          className="bg-blue-500 px-3 py-1 text-sm rounded-md"
-          onClick={async () => {
-            await startCall();
-          }}
-        >
-          Start Network
-        </button>
-      </div>
-
-      {/* Status */}
-      <div className="text-center text-xs mt-1">
-        {connected ? (
-          <span className="text-green-400">🟢 Connected</span>
-        ) : (
-          <span className="text-red-400">🔴 Waiting...</span>
-        )}
-      </div>
-
-      {/* Messages */}
-      <div className="flex-1 px-2 py-3 overflow-y-auto overflow-x-hidden scroll-smooth">
+      {/* 🔥 SCROLLABLE MESSAGES */}
+      <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 px-2 py-3 scroll-smooth">
         {messages.length === 0 && (
           <div className="text-center text-gray-500 mt-20 text-sm px-2">
             No messages yet.
@@ -148,8 +151,8 @@ export default function ChatPage() {
         <div ref={bottomRef} />
       </div>
 
-      {/* Input */}
-      <div className="p-2 border-t border-gray-800 flex gap-2 w-full overflow-hidden items-center">
+      {/* 🔥 FIXED INPUT */}
+      <div className="shrink-0 p-2 border-t border-gray-800 flex gap-2 items-center bg-[#0B0F14]">
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -165,6 +168,7 @@ export default function ChatPage() {
           Send
         </button>
       </div>
+
     </div>
   );
 }
