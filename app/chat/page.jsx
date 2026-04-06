@@ -78,7 +78,7 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="h-screen bg-[#0B0F14] text-white flex flex-col">
+    <div className="h-screen w-full overflow-x-hidden bg-[#0B0F14] text-white flex flex-col">
 
       {/* Banner */}
       <div className="bg-yellow-500 text-black text-center py-1 text-xs sm:text-sm">
@@ -107,9 +107,9 @@ export default function ChatPage() {
       </div>
 
       {/* Messages */}
-      <div className="flex-1 px-2 py-3 overflow-y-auto scroll-smooth">
+      <div className="flex-1 px-2 py-3 overflow-y-auto overflow-x-hidden scroll-smooth">
         {messages.length === 0 && (
-          <div className="text-center text-gray-500 mt-20 text-sm">
+          <div className="text-center text-gray-500 mt-20 text-sm px-2">
             No messages yet.
             <br />
             Open another tab or device.
@@ -124,13 +124,15 @@ export default function ChatPage() {
             } mb-2`}
           >
             <div
-              className={`px-3 py-2 rounded-xl max-w-[75%] break-words ${
+              className={`px-3 py-2 rounded-2xl max-w-[75%] break-words overflow-hidden min-w-0 ${
                 msg.isOwn
                   ? "bg-green-500 text-black"
                   : "bg-gray-700 text-white"
               }`}
             >
-              <p className="text-sm">{msg.text}</p>
+              <p className="text-sm leading-snug break-words">
+                {msg.text}
+              </p>
 
               <span className="text-[10px] block mt-1 opacity-70">
                 {msg.status}
@@ -147,18 +149,18 @@ export default function ChatPage() {
       </div>
 
       {/* Input */}
-      <div className="p-2 border-t border-gray-800 flex gap-2">
+      <div className="p-2 border-t border-gray-800 flex gap-2 w-full overflow-hidden items-center">
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-          className="flex-1 bg-[#121821] px-3 py-2 text-sm rounded-full outline-none"
+          className="flex-1 min-w-0 bg-[#121821] px-3 py-2 text-sm rounded-full outline-none"
           placeholder="Type message..."
         />
 
         <button
           onClick={sendMessage}
-          className="bg-green-500 px-4 text-sm rounded-full"
+          className="bg-green-500 px-4 py-2 text-sm rounded-full shrink-0"
         >
           Send
         </button>
