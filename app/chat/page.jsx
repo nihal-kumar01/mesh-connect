@@ -9,6 +9,7 @@ import {
 import { useState, useEffect, useRef } from "react";
 
 export default function ChatPage() {
+  const [connecting, setConnecting] = useState(false);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [connected, setConnected] = useState(false);
@@ -31,6 +32,10 @@ export default function ChatPage() {
       setConnected(true);
     };
   }, []);
+
+    useEffect(() => {
+    if (connected) setConnecting(false);
+  }, [connected]);
 
   // 📩 Receive messages
   useEffect(() => {
@@ -80,36 +85,36 @@ export default function ChatPage() {
   return (
     <div className="h-[100dvh] w-full overflow-hidden bg-[#0B0F14] text-white flex flex-col">
 
-      {/* 🔥 FIXED HEADER SECTION */}
+      {/* 🔥 FIXED HEADER */}
       <div className="shrink-0">
+
         {/* Banner */}
         <div className="bg-yellow-500 text-black text-center py-1 text-xs sm:text-sm">
           ⚠ Mesh Network Active (P2P)
         </div>
 
-        {/* Start Button */}
-        <div className="p-2 flex justify-center bg-[#121821]">
-          <button
-            className="bg-blue-500 px-3 py-1 text-sm rounded-md"
-            onClick={async () => {
-              await startCall();
-            }}
-          >
-            Start Network
-          </button>
-        </div>
-
-        {/* Status */}
-        <div className="text-center text-xs py-1">
+        {/* 🔥 Dynamic Connection UI */}
+        <div className="p-2 flex justify-center bg-[#121821] text-sm">
           {connected ? (
             <span className="text-green-400">🟢 Connected</span>
+          ) : connecting ? (
+            <span className="text-yellow-400">🟡 Connecting...</span>
           ) : (
-            <span className="text-red-400">🔴 Waiting...</span>
+            <button
+              className="bg-blue-500 px-3 py-1 rounded-md"
+              onClick={async () => {
+                setConnecting(true);
+                await startCall();
+              }}
+            >
+              Start Network
+            </button>
           )}
         </div>
+
       </div>
 
-      {/* 🔥 SCROLLABLE MESSAGES */}
+      {/* 🔥 MESSAGES */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 px-2 py-3 scroll-smooth">
         {messages.length === 0 && (
           <div className="text-center text-gray-500 mt-20 text-sm px-2">
@@ -151,7 +156,7 @@ export default function ChatPage() {
         <div ref={bottomRef} />
       </div>
 
-      {/* 🔥 FIXED INPUT */}
+      {/* 🔥 INPUT */}
       <div className="shrink-0 p-2 border-t border-gray-800 flex gap-2 items-center bg-[#0B0F14]">
         <input
           value={input}
