@@ -2,7 +2,6 @@
 
 import {
   initSocket,
-  startCall,
   sendMessage as rtcSend,
 } from "../services/webrtc";
 
@@ -17,7 +16,8 @@ export default function ChatPage() {
 
   // 🔌 Init WebSocket once
   useEffect(() => {
-    initSocket(); // 🔥 ADD THIS LINE
+    initSocket();
+    setConnecting(true); // 🔥 AUTO START
   }, []);
 
   // 🔽 Auto scroll
@@ -97,18 +97,8 @@ export default function ChatPage() {
         <div className="p-2 flex justify-center bg-[#121821] text-sm">
           {connected ? (
             <span className="text-green-400">🟢 Connected</span>
-          ) : connecting ? (
-            <span className="text-yellow-400">🟡 Connecting...</span>
           ) : (
-            <button
-              className="bg-blue-500 px-3 py-1 rounded-md"
-              onClick={async () => {
-                setConnecting(true);
-                await startCall();
-              }}
-            >
-              Start Network
-            </button>
+            <span className="text-yellow-400">🟡 Connecting...</span>
           )}
         </div>
 
