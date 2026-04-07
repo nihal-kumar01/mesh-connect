@@ -2,7 +2,6 @@ let peerConnections = {};
 let dataChannels = {};
 let myId = null;
 let socket;
-let allPeers = [];
 
 const config = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
@@ -18,23 +17,35 @@ export const initSocket = () => {
   socket.onmessage = async (event) => {
     const data = JSON.parse(event.data);
 
-    if (data.type === "new-peer") {
-      console.log("🆕 New peer joined:", data.peerId);
-      if (!allPeers.includes(data.peerId)) {
-        allPeers.push(data.peerId);
-      }
-    }
-
+    // 🆔 Assign ID
     if (data.type === "init") {
       myId = data.id;
       console.log("🆔 My ID:", myId);
     }
 
+    // 👥 Existing peers → connect to all
     if (data.type === "peers") {
       console.log("👥 Peers:", data.peers);
-      allPeers = data.peers;
+
+      data.peers.forEach((peerId) => {
+        if (peerId !== myId && !peerConnections[peerId]) {
+          createPeer(peerId, true); // 🔥 AUTO CONNECT
+        }
+      });
     }
 
+    // 🆕 New peer joined → connect instantly
+    if (data.type === "new-peer") {
+      console.log("🆕 New peer joined:", data.peerId);
+
+      if (data.peerId === myId) return;
+
+      if (!peerConnections[data.peerId]) {
+        createPeer(data.peerId, true); // 🔥 AUTO CONNECT
+      }
+    }
+
+    // 📥 Offer received
     if (data.type === "offer") {
       console.log("📥 Offer from:", data.from);
 
@@ -43,11 +54,12 @@ export const initSocket = () => {
 
       await pc.setRemoteDescription(
         new RTCSessionDescription({
-          type: data.type,
+          type: "offer",
           sdp: data.sdp,
         })
       );
 
+      // Add pending ICE candidates
       for (const candidate of pcData.pendingCandidates) {
         await pc.addIceCandidate(new RTCIceCandidate(candidate));
       }
@@ -58,13 +70,14 @@ export const initSocket = () => {
 
       socket.send(
         JSON.stringify({
-          type: pc.localDescription.type,
+          type: "answer",
           sdp: pc.localDescription.sdp,
           to: data.from,
         })
       );
     }
 
+    // 📥 Answer received
     if (data.type === "answer") {
       console.log("📥 Answer from:", data.from);
 
@@ -74,11 +87,12 @@ export const initSocket = () => {
 
         await pc.setRemoteDescription(
           new RTCSessionDescription({
-            type: data.type,
+            type: "answer",
             sdp: data.sdp,
           })
         );
 
+        // Add pending ICE candidates
         for (const candidate of pcData.pendingCandidates) {
           await pc.addIceCandidate(new RTCIceCandidate(candidate));
         }
@@ -86,6 +100,7 @@ export const initSocket = () => {
       }
     }
 
+    // ❄️ ICE candidates
     if (data.type === "candidate") {
       const pcData = peerConnections[data.from];
 
@@ -104,8 +119,9 @@ export const initSocket = () => {
   };
 };
 
-// 🔗 Create peer
+// 🔗 Create peer connection
 function createPeer(peerId, isInitiator) {
+  if (peerId === myId) return;
   if (peerConnections[peerId]) return peerConnections[peerId];
 
   const pc = new RTCPeerConnection(config);
@@ -140,7 +156,7 @@ function createPeer(peerId, isInitiator) {
 
       socket.send(
         JSON.stringify({
-          type: pc.localDescription.type,
+          type: "offer",
           sdp: pc.localDescription.sdp,
           to: peerId,
         })
@@ -155,7 +171,7 @@ function createPeer(peerId, isInitiator) {
   return peerConnections[peerId];
 }
 
-// 💬 Channel
+// 💬 Setup data channel
 function setupChannel(peerId, channel) {
   dataChannels[peerId] = channel;
 
@@ -167,26 +183,15 @@ function setupChannel(peerId, channel) {
   channel.onmessage = (e) => {
     window.receiveMessage?.(e.data);
   };
+
+  channel.onclose = () => {
+    console.log("❌ Disconnected:", peerId);
+    delete dataChannels[peerId];
+    delete peerConnections[peerId];
+  };
 }
 
-// 🚀 Start
-export const startCall = async () => {
-  console.log("🚀 Start clicked");
-
-  if (!socket || socket.readyState !== WebSocket.OPEN) {
-    await new Promise((resolve) => {
-      socket.onopen = resolve;
-    });
-  }
-
-  console.log("🔥 Connecting to peers:", allPeers);
-
-  allPeers.forEach((peerId) => {
-    createPeer(peerId, true);
-  });
-};
-
-// 📤 Send
+// 📤 Send message to all
 export const sendMessage = (msg) => {
   Object.values(dataChannels).forEach((channel) => {
     if (channel.readyState === "open") {
