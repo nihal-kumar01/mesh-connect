@@ -17,19 +17,25 @@ const config = {
 export const initSocket = () => {
   if (typeof window === "undefined") return;
 
-  socket = new WebSocket("wss://mesh-connect-backend-production.up.railway.app");
+  socket = new WebSocket(
+    "wss://mesh-connect-backend-production.up.railway.app"
+  );
 
+  // ✅ FIX: Proper connection trigger
   socket.onopen = () => {
-    console.log("🟢 Connected");
+    console.log("🟢 Connected to server");
+    window.onConnected?.(); // 🔥 CRITICAL FIX
   };
 
   socket.onmessage = async (event) => {
     const data = JSON.parse(event.data);
 
-    // 🆔 Init
-    if (data.type === "init") myId = data.id;
+    // 🆔 INIT
+    if (data.type === "init") {
+      myId = data.id;
+    }
 
-    // 👥 Existing peers
+    // 👥 EXISTING PEERS
     if (data.type === "peers") {
       data.peers.forEach((peerId) => {
         if (peerId !== myId && !peerConnections[peerId]) {
@@ -38,14 +44,14 @@ export const initSocket = () => {
       });
     }
 
-    // 🆕 New peer
+    // 🆕 NEW PEER
     if (data.type === "new-peer") {
       if (data.peerId !== myId && !peerConnections[data.peerId]) {
         createPeer(data.peerId, true);
       }
     }
 
-    // 📥 Offer
+    // 📥 OFFER
     if (data.type === "offer") {
       const pcData = createPeer(data.from, false);
       const pc = pcData.pc;
@@ -67,7 +73,7 @@ export const initSocket = () => {
       );
     }
 
-    // 📥 Answer
+    // 📥 ANSWER
     if (data.type === "answer") {
       const pc = peerConnections[data.from]?.pc;
       if (pc) {
@@ -88,24 +94,32 @@ export const initSocket = () => {
       }
     }
 
-    // 💬 SERVER MESSAGE ONLY (SOURCE OF TRUTH)
+    // 💬 SERVER MESSAGE (ONLY SOURCE OF TRUTH)
     if (data.type === "chat") {
       window.receiveMessage?.(data);
     }
 
-    // 👥 Users count
+    // 👥 USERS COUNT
     if (data.type === "users-count") {
       window.updateUserCount?.(data.count);
     }
 
-    // ✍️ Typing
+    // ✍️ TYPING
     if (data.type === "typing") {
       window.showTyping?.();
     }
   };
+
+  socket.onerror = (err) => {
+    console.log("❌ WebSocket error:", err.message);
+  };
+
+  socket.onclose = () => {
+    console.log("🔴 Disconnected from server");
+  };
 };
 
-// 🔗 Create peer
+// 🔗 CREATE PEER
 function createPeer(peerId, isInitiator) {
   if (peerConnections[peerId]) return peerConnections[peerId];
 
@@ -128,10 +142,9 @@ function createPeer(peerId, isInitiator) {
   if (isInitiator) {
     const channel = pc.createDataChannel("chat");
 
-    // ❌ DO NOT SHOW P2P MESSAGE
+    // ❌ BLOCK P2P UI MESSAGES (PREVENT DUPLICATES)
     channel.onmessage = () => {};
 
-    // store (optional future use)
     dataChannels[peerId] = channel;
 
     (async () => {
@@ -150,7 +163,7 @@ function createPeer(peerId, isInitiator) {
     pc.ondatachannel = (e) => {
       const channel = e.channel;
 
-      // ❌ ignore UI messages
+      // ❌ BLOCK P2P UI MESSAGES
       channel.onmessage = () => {};
 
       dataChannels[peerId] = channel;
@@ -160,7 +173,7 @@ function createPeer(peerId, isInitiator) {
   return peerConnections[peerId];
 }
 
-// 📤 SEND MESSAGE (SERVER ONLY FOR UI)
+// 📤 SEND MESSAGE (SERVER ONLY)
 export const sendMessage = (msg) => {
   if (!socket || socket.readyState !== WebSocket.OPEN) return;
 
@@ -173,11 +186,9 @@ export const sendMessage = (msg) => {
       id,
     })
   );
-
-  // ❌ REMOVE P2P sending completely
 };
 
-// ✍️ Typing
+// ✍️ SEND TYPING
 export const sendTyping = () => {
   if (socket?.readyState === WebSocket.OPEN) {
     socket.send(JSON.stringify({ type: "typing" }));
