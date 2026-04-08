@@ -174,12 +174,7 @@ export const sendMessage = (msg) => {
     })
   );
 
-  // OPTIONAL: still send via WebRTC (but ignored on receive)
-  Object.values(dataChannels).forEach((ch) => {
-    if (ch.readyState === "open") {
-      ch.send(JSON.stringify({ message: msg, id }));
-    }
-  });
+  // ❌ REMOVE P2P sending completely
 };
 
 // ✍️ Typing
