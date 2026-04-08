@@ -26,8 +26,10 @@ export const initSocket = () => {
   socket.onmessage = async (event) => {
     const data = JSON.parse(event.data);
 
+    // 🆔 Init
     if (data.type === "init") myId = data.id;
 
+    // 👥 Existing peers
     if (data.type === "peers") {
       data.peers.forEach((peerId) => {
         if (peerId !== myId && !peerConnections[peerId]) {
@@ -36,17 +38,22 @@ export const initSocket = () => {
       });
     }
 
+    // 🆕 New peer
     if (data.type === "new-peer") {
-      if (!peerConnections[data.peerId]) {
+      if (data.peerId !== myId && !peerConnections[data.peerId]) {
         createPeer(data.peerId, true);
       }
     }
 
+    // 📥 Offer
     if (data.type === "offer") {
       const pcData = createPeer(data.from, false);
       const pc = pcData.pc;
 
-      await pc.setRemoteDescription({ type: "offer", sdp: data.sdp });
+      await pc.setRemoteDescription({
+        type: "offer",
+        sdp: data.sdp,
+      });
 
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
@@ -60,40 +67,52 @@ export const initSocket = () => {
       );
     }
 
+    // 📥 Answer
     if (data.type === "answer") {
       const pc = peerConnections[data.from]?.pc;
       if (pc) {
-        await pc.setRemoteDescription({ type: "answer", sdp: data.sdp });
+        await pc.setRemoteDescription({
+          type: "answer",
+          sdp: data.sdp,
+        });
       }
     }
 
+    // ❄️ ICE
     if (data.type === "candidate") {
       const pc = peerConnections[data.from]?.pc;
       if (pc && data.candidate) {
-        await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+        await pc.addIceCandidate(
+          new RTCIceCandidate(data.candidate)
+        );
       }
     }
 
-    // ✅ ONLY SHOW MESSAGE FROM SERVER
+    // 💬 SERVER MESSAGE ONLY (SOURCE OF TRUTH)
     if (data.type === "chat") {
       window.receiveMessage?.(data);
     }
 
+    // 👥 Users count
     if (data.type === "users-count") {
       window.updateUserCount?.(data.count);
     }
 
+    // ✍️ Typing
     if (data.type === "typing") {
       window.showTyping?.();
     }
   };
 };
 
+// 🔗 Create peer
 function createPeer(peerId, isInitiator) {
+  if (peerConnections[peerId]) return peerConnections[peerId];
+
   const pc = new RTCPeerConnection(config);
 
   pc.onicecandidate = (e) => {
-    if (e.candidate) {
+    if (e.candidate && socket?.readyState === WebSocket.OPEN) {
       socket.send(
         JSON.stringify({
           type: "candidate",
@@ -109,8 +128,11 @@ function createPeer(peerId, isInitiator) {
   if (isInitiator) {
     const channel = pc.createDataChannel("chat");
 
-    // ❌ DO NOT SHOW MESSAGE FROM P2P
+    // ❌ DO NOT SHOW P2P MESSAGE
     channel.onmessage = () => {};
+
+    // store (optional future use)
+    dataChannels[peerId] = channel;
 
     (async () => {
       const offer = await pc.createOffer();
@@ -126,15 +148,22 @@ function createPeer(peerId, isInitiator) {
     })();
   } else {
     pc.ondatachannel = (e) => {
-      e.channel.onmessage = () => {}; // ❌ ignore P2P UI
+      const channel = e.channel;
+
+      // ❌ ignore UI messages
+      channel.onmessage = () => {};
+
+      dataChannels[peerId] = channel;
     };
   }
 
   return peerConnections[peerId];
 }
 
-// ✅ SEND VIA BOTH (BUT UI FROM SERVER ONLY)
+// 📤 SEND MESSAGE (SERVER ONLY FOR UI)
 export const sendMessage = (msg) => {
+  if (!socket || socket.readyState !== WebSocket.OPEN) return;
+
   const id = Date.now() + Math.random();
 
   socket.send(
@@ -145,6 +174,7 @@ export const sendMessage = (msg) => {
     })
   );
 
+  // OPTIONAL: still send via WebRTC (but ignored on receive)
   Object.values(dataChannels).forEach((ch) => {
     if (ch.readyState === "open") {
       ch.send(JSON.stringify({ message: msg, id }));
@@ -152,6 +182,9 @@ export const sendMessage = (msg) => {
   });
 };
 
+// ✍️ Typing
 export const sendTyping = () => {
-  socket.send(JSON.stringify({ type: "typing" }));
+  if (socket?.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify({ type: "typing" }));
+  }
 };
