@@ -12,12 +12,16 @@ export default function ChatPage() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [connected, setConnected] = useState(false);
+  const [users, setUsers] = useState(1); // 👥 NEW
   const bottomRef = useRef(null);
 
-  // 🔌 Init WebSocket once
+  // 🧠 Duplicate protection
+  const seenMessages = useRef(new Set());
+
+  // 🔌 Init
   useEffect(() => {
     initSocket();
-    setConnecting(true); // 🔥 AUTO START
+    setConnecting(true);
   }, []);
 
   // 🔽 Auto scroll
@@ -28,24 +32,33 @@ export default function ChatPage() {
   // 🟢 Connection event
   useEffect(() => {
     window.onConnected = () => {
-      console.log("✅ Connected triggered");
       setConnected(true);
     };
   }, []);
 
-    useEffect(() => {
+  useEffect(() => {
     if (connected) setConnecting(false);
   }, [connected]);
 
-  // 📩 Receive messages
+  // 👥 Users count
+  useEffect(() => {
+    window.updateUserCount = (count) => {
+      setUsers(count);
+    };
+  }, []);
+
+  // 📩 Receive messages (FIXED)
   useEffect(() => {
     window.receiveMessage = (msg) => {
+      if (seenMessages.current.has(msg)) return;
+      seenMessages.current.add(msg);
+
       setMessages((prev) => [
         ...prev,
         {
-          id: Date.now(),
+          id: Date.now() + Math.random(),
           text: msg,
-          status: "Received via P2P",
+          status: "Received",
           isOwn: false,
           time: new Date().toLocaleTimeString(),
         },
@@ -75,7 +88,7 @@ export default function ChatPage() {
       setMessages((prev) =>
         prev.map((m) =>
           m.id === newMsg.id
-            ? { ...m, status: "Delivered via P2P" }
+            ? { ...m, status: "Delivered" }
             : m
         )
       );
@@ -85,27 +98,33 @@ export default function ChatPage() {
   return (
     <div className="h-[100dvh] w-full overflow-hidden bg-[#0B0F14] text-white flex flex-col">
 
-      {/* 🔥 FIXED HEADER */}
+      {/* 🔥 HEADER */}
       <div className="shrink-0">
 
         {/* Banner */}
         <div className="bg-yellow-500 text-black text-center py-1 text-xs sm:text-sm">
-          ⚠ Mesh Network Active (P2P)
+          ⚠ Mesh Network Active (Hybrid)
         </div>
 
-        {/* 🔥 Dynamic Connection UI */}
-        <div className="p-2 flex justify-center bg-[#121821] text-sm">
-          {connected ? (
-            <span className="text-green-400">🟢 Connected</span>
-          ) : (
-            <span className="text-yellow-400">🟡 Connecting...</span>
-          )}
+        {/* Status */}
+        <div className="p-2 flex justify-center gap-4 bg-[#121821] text-sm">
+          <span>
+            {connected ? (
+              <span className="text-green-400">🟢 Connected</span>
+            ) : (
+              <span className="text-yellow-400">🟡 Connecting...</span>
+            )}
+          </span>
+
+          <span className="text-blue-400">
+            👥 {users} Online
+          </span>
         </div>
 
       </div>
 
       {/* 🔥 MESSAGES */}
-      <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 px-2 py-3 scroll-smooth">
+      <div className="flex-1 overflow-y-auto px-2 py-3">
         {messages.length === 0 && (
           <div className="text-center text-gray-500 mt-20 text-sm px-2">
             No messages yet.
@@ -122,15 +141,13 @@ export default function ChatPage() {
             } mb-2`}
           >
             <div
-              className={`px-3 py-2 rounded-2xl max-w-[75%] break-words overflow-hidden min-w-0 ${
+              className={`px-3 py-2 rounded-2xl max-w-[75%] ${
                 msg.isOwn
                   ? "bg-green-500 text-black"
                   : "bg-gray-700 text-white"
               }`}
             >
-              <p className="text-sm leading-snug break-words">
-                {msg.text}
-              </p>
+              <p className="text-sm">{msg.text}</p>
 
               <span className="text-[10px] block mt-1 opacity-70">
                 {msg.status}
@@ -147,18 +164,18 @@ export default function ChatPage() {
       </div>
 
       {/* 🔥 INPUT */}
-      <div className="shrink-0 p-2 border-t border-gray-800 flex gap-2 items-center bg-[#0B0F14]">
+      <div className="shrink-0 p-2 border-t border-gray-800 flex gap-2 items-center">
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-          className="flex-1 min-w-0 bg-[#121821] px-3 py-2 text-sm rounded-full outline-none"
+          className="flex-1 bg-[#121821] px-3 py-2 text-sm rounded-full outline-none"
           placeholder="Type message..."
         />
 
         <button
           onClick={sendMessage}
-          className="bg-green-500 px-4 py-2 text-sm rounded-full shrink-0"
+          className="bg-green-500 px-4 py-2 text-sm rounded-full"
         >
           Send
         </button>
