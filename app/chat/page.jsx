@@ -16,7 +16,8 @@ export default function ChatPage() {
   const [typing, setTyping] = useState(false);
 
   const bottomRef = useRef(null);
-  const seenIds = useRef(new Set()); // ✅ FIX DUPLICATES
+  const seenIds = useRef(new Set());
+  const typingTimeout = useRef(null);
 
   useEffect(() => {
     initSocket();
@@ -28,32 +29,18 @@ export default function ChatPage() {
 
   useEffect(() => {
     window.onConnected = () => setConnected(true);
-  }, []);
 
-  useEffect(() => {
     window.updateUserCount = (count) => setUsers(count);
-  }, []);
-
-  // ✍️ Typing indicator (stable)
-  useEffect(() => {
-    let timeout;
 
     window.showTyping = () => {
       setTyping(true);
-
-      clearTimeout(timeout);
-      timeout = setTimeout(() => {
-        setTyping(false);
-      }, 1500);
+      setTimeout(() => setTyping(false), 1500);
     };
-  }, []);
 
-  // 📩 RECEIVE (DEDUP FIX)
-  useEffect(() => {
     window.receiveMessage = (data) => {
       if (!data?.id) return;
 
-      if (seenIds.current.has(data.id)) return; // ✅ STOP DUPLICATE
+      if (seenIds.current.has(data.id)) return;
       seenIds.current.add(data.id);
 
       setMessages((prev) => [
@@ -72,8 +59,7 @@ export default function ChatPage() {
     if (!input.trim()) return;
 
     const id = Date.now() + Math.random();
-
-    seenIds.current.add(id); // ✅ avoid self-duplicate
+    seenIds.current.add(id);
 
     setMessages((prev) => [
       ...prev,
@@ -92,7 +78,6 @@ export default function ChatPage() {
   return (
     <div className="h-[100dvh] w-full bg-[#0B0F14] text-white flex flex-col">
 
-      {/* HEADER */}
       <div>
         <div className="bg-yellow-500 text-black text-center py-1 text-sm">
           ⚠ Mesh Network Active (Hybrid)
@@ -109,14 +94,12 @@ export default function ChatPage() {
         </div>
       </div>
 
-      {/* ✍️ Typing */}
       {typing && (
         <div className="text-sm text-gray-400 px-3 mt-2">
           ✍️ Someone is typing...
         </div>
       )}
 
-      {/* MESSAGES */}
       <div className="flex-1 overflow-y-auto px-3 py-4">
         {messages.map((msg) => (
           <div
@@ -140,17 +123,21 @@ export default function ChatPage() {
         <div ref={bottomRef} />
       </div>
 
-      {/* INPUT */}
       <div className="p-2 border-t border-gray-800 flex gap-2">
         <input
           value={input}
           onChange={(e) => {
             setInput(e.target.value);
 
-            // ✅ SEND TYPING ONLY IF TEXT EXISTS
-            if (e.target.value.trim()) {
+            if (!typingTimeout.current) {
               sendTyping();
             }
+
+            clearTimeout(typingTimeout.current);
+
+            typingTimeout.current = setTimeout(() => {
+              typingTimeout.current = null;
+            }, 1500);
           }}
           onKeyDown={(e) => e.key === "Enter" && sendMessage()}
           className="flex-1 bg-[#121821] px-3 py-2 rounded-full outline-none"
