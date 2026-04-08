@@ -20,15 +20,13 @@ export const initSocket = () => {
   socket = new WebSocket("wss://mesh-connect-backend-production.up.railway.app");
 
   socket.onopen = () => {
-    console.log("🟢 Connected to signaling server");
+    console.log("🟢 Connected");
   };
 
   socket.onmessage = async (event) => {
     const data = JSON.parse(event.data);
 
-    if (data.type === "init") {
-      myId = data.id;
-    }
+    if (data.type === "init") myId = data.id;
 
     if (data.type === "peers") {
       data.peers.forEach((peerId) => {
@@ -39,7 +37,6 @@ export const initSocket = () => {
     }
 
     if (data.type === "new-peer") {
-      if (data.peerId === myId) return;
       if (!peerConnections[data.peerId]) {
         createPeer(data.peerId, true);
       }
@@ -49,15 +46,7 @@ export const initSocket = () => {
       const pcData = createPeer(data.from, false);
       const pc = pcData.pc;
 
-      await pc.setRemoteDescription({
-        type: "offer",
-        sdp: data.sdp,
-      });
-
-      for (const candidate of pcData.pendingCandidates) {
-        await pc.addIceCandidate(new RTCIceCandidate(candidate));
-      }
-      pcData.pendingCandidates = [];
+      await pc.setRemoteDescription({ type: "offer", sdp: data.sdp });
 
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
@@ -72,79 +61,56 @@ export const initSocket = () => {
     }
 
     if (data.type === "answer") {
-      const pcData = peerConnections[data.from];
-      if (!pcData) return;
-
-      const pc = pcData.pc;
-
-      await pc.setRemoteDescription({
-        type: "answer",
-        sdp: data.sdp,
-      });
-
-      for (const candidate of pcData.pendingCandidates) {
-        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      const pc = peerConnections[data.from]?.pc;
+      if (pc) {
+        await pc.setRemoteDescription({ type: "answer", sdp: data.sdp });
       }
-      pcData.pendingCandidates = [];
     }
 
     if (data.type === "candidate") {
-      const pcData = peerConnections[data.from];
-
-      if (pcData && data.candidate) {
-        const pc = pcData.pc;
-
-        if (!pc.remoteDescription) {
-          pcData.pendingCandidates.push(data.candidate);
-        } else {
-          await pc.addIceCandidate(
-            new RTCIceCandidate(data.candidate)
-          );
-        }
+      const pc = peerConnections[data.from]?.pc;
+      if (pc && data.candidate) {
+        await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
       }
     }
 
-    // ✅ Broadcast message
+    // ✅ ONLY SHOW MESSAGE FROM SERVER
     if (data.type === "chat") {
       window.receiveMessage?.(data);
     }
 
-    // 👥 Users count
     if (data.type === "users-count") {
       window.updateUserCount?.(data.count);
+    }
+
+    if (data.type === "typing") {
+      window.showTyping?.();
     }
   };
 };
 
 function createPeer(peerId, isInitiator) {
-  if (peerId === myId) return;
-  if (peerConnections[peerId]) return peerConnections[peerId];
-
   const pc = new RTCPeerConnection(config);
 
-  pc.onconnectionstatechange = () => {
-    console.log(`🔗 [${peerId}]`, pc.connectionState);
-  };
-
-  pc.onicecandidate = (event) => {
-    if (event.candidate && socket?.readyState === WebSocket.OPEN) {
+  pc.onicecandidate = (e) => {
+    if (e.candidate) {
       socket.send(
         JSON.stringify({
           type: "candidate",
-          candidate: event.candidate,
+          candidate: e.candidate,
           to: peerId,
         })
       );
     }
   };
 
-  peerConnections[peerId] = { pc, pendingCandidates: [] };
+  peerConnections[peerId] = { pc };
 
-  const shouldInitiate = isInitiator && myId < peerId;
-
-  if (shouldInitiate) {
+  if (isInitiator) {
     const channel = pc.createDataChannel("chat");
-    setupChannel(peerId, channel);
+
+    // ❌ DO NOT SHOW MESSAGE FROM P2P
+    channel.onmessage = () => {};
 
     (async () => {
       const offer = await pc.createOffer();
@@ -159,56 +125,33 @@ function createPeer(peerId, isInitiator) {
       );
     })();
   } else {
-    pc.ondatachannel = (event) => {
-      setupChannel(peerId, event.channel);
+    pc.ondatachannel = (e) => {
+      e.channel.onmessage = () => {}; // ❌ ignore P2P UI
     };
   }
 
   return peerConnections[peerId];
 }
 
-function setupChannel(peerId, channel) {
-  dataChannels[peerId] = channel;
-
-  channel.onopen = () => {
-    window.onConnected?.();
-  };
-
-  channel.onmessage = (e) => {
-    const data = JSON.parse(e.data);
-    window.receiveMessage?.(data);
-  };
-
-  channel.onclose = () => {
-    delete dataChannels[peerId];
-    delete peerConnections[peerId];
-  };
-}
-
-// ✅ FINAL SEND (DEDUP SAFE)
+// ✅ SEND VIA BOTH (BUT UI FROM SERVER ONLY)
 export const sendMessage = (msg) => {
   const id = Date.now() + Math.random();
 
-  // Broadcast
-  if (socket?.readyState === WebSocket.OPEN) {
-    socket.send(
-      JSON.stringify({
-        type: "chat",
-        message: msg,
-        id,
-      })
-    );
-  }
+  socket.send(
+    JSON.stringify({
+      type: "chat",
+      message: msg,
+      id,
+    })
+  );
 
-  // P2P
-  Object.values(dataChannels).forEach((channel) => {
-    if (channel.readyState === "open") {
-      channel.send(
-        JSON.stringify({
-          message: msg,
-          id,
-        })
-      );
+  Object.values(dataChannels).forEach((ch) => {
+    if (ch.readyState === "open") {
+      ch.send(JSON.stringify({ message: msg, id }));
     }
   });
+};
+
+export const sendTyping = () => {
+  socket.send(JSON.stringify({ type: "typing" }));
 };
