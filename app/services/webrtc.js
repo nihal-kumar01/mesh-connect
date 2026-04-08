@@ -34,8 +34,6 @@ export const initSocket = () => {
 
     // 👥 Existing peers
     if (data.type === "peers") {
-      console.log("👥 Peers:", data.peers);
-
       data.peers.forEach((peerId) => {
         if (peerId !== myId && !peerConnections[peerId]) {
           createPeer(peerId, true);
@@ -45,8 +43,6 @@ export const initSocket = () => {
 
     // 🆕 New peer
     if (data.type === "new-peer") {
-      console.log("🆕 New peer joined:", data.peerId);
-
       if (data.peerId === myId) return;
 
       if (!peerConnections[data.peerId]) {
@@ -56,8 +52,6 @@ export const initSocket = () => {
 
     // 📥 Offer
     if (data.type === "offer") {
-      console.log("📥 Offer from:", data.from);
-
       const pcData = createPeer(data.from, false);
       const pc = pcData.pc;
 
@@ -85,8 +79,6 @@ export const initSocket = () => {
 
     // 📥 Answer
     if (data.type === "answer") {
-      console.log("📥 Answer from:", data.from);
-
       const pcData = peerConnections[data.from];
       if (!pcData) return;
 
@@ -119,6 +111,13 @@ export const initSocket = () => {
         }
       }
     }
+
+    // 🟢 ✅ NEW: BROADCAST CHAT SUPPORT
+    if (data.type === "chat") {
+      if (typeof window !== "undefined") {
+        window.receiveMessage?.(`${data.from}: ${data.message}`);
+      }
+    }
   };
 };
 
@@ -147,7 +146,6 @@ function createPeer(peerId, isInitiator) {
 
   peerConnections[peerId] = { pc, pendingCandidates: [] };
 
-  // 🔥 CRITICAL: Prevent offer collision
   const shouldInitiate = isInitiator && myId < peerId;
 
   if (shouldInitiate) {
@@ -157,8 +155,6 @@ function createPeer(peerId, isInitiator) {
     (async () => {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-
-      console.log("📤 Sending offer to", peerId);
 
       socket.send(
         JSON.stringify({
@@ -191,7 +187,7 @@ function setupChannel(peerId, channel) {
 
   channel.onmessage = (e) => {
     if (typeof window !== "undefined") {
-      window.receiveMessage?.(e.data);
+      window.receiveMessage?.(`P2P: ${e.data}`);
     }
   };
 
@@ -202,8 +198,19 @@ function setupChannel(peerId, channel) {
   };
 }
 
-// 📤 Send message
+// 📤 Send message (UPDATED)
 export const sendMessage = (msg) => {
+  // 🟢 Broadcast via server (ALL users)
+  if (socket?.readyState === WebSocket.OPEN) {
+    socket.send(
+      JSON.stringify({
+        type: "chat",
+        message: msg,
+      })
+    );
+  }
+
+  // ⚡ Optional: send via WebRTC
   Object.values(dataChannels).forEach((channel) => {
     if (channel.readyState === "open") {
       channel.send(msg);
