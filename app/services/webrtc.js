@@ -26,13 +26,10 @@ export const initSocket = () => {
   socket.onmessage = async (event) => {
     const data = JSON.parse(event.data);
 
-    // 🆔 Assign ID
     if (data.type === "init") {
       myId = data.id;
-      console.log("🆔 My ID:", myId);
     }
 
-    // 👥 Existing peers
     if (data.type === "peers") {
       data.peers.forEach((peerId) => {
         if (peerId !== myId && !peerConnections[peerId]) {
@@ -41,16 +38,13 @@ export const initSocket = () => {
       });
     }
 
-    // 🆕 New peer
     if (data.type === "new-peer") {
       if (data.peerId === myId) return;
-
       if (!peerConnections[data.peerId]) {
         createPeer(data.peerId, true);
       }
     }
 
-    // 📥 Offer
     if (data.type === "offer") {
       const pcData = createPeer(data.from, false);
       const pc = pcData.pc;
@@ -77,7 +71,6 @@ export const initSocket = () => {
       );
     }
 
-    // 📥 Answer
     if (data.type === "answer") {
       const pcData = peerConnections[data.from];
       if (!pcData) return;
@@ -95,7 +88,6 @@ export const initSocket = () => {
       pcData.pendingCandidates = [];
     }
 
-    // ❄️ ICE
     if (data.type === "candidate") {
       const pcData = peerConnections[data.from];
 
@@ -112,16 +104,18 @@ export const initSocket = () => {
       }
     }
 
-    // 🟢 ✅ NEW: BROADCAST CHAT SUPPORT
+    // ✅ Broadcast message
     if (data.type === "chat") {
-      if (typeof window !== "undefined") {
-        window.receiveMessage?.(`${data.from}: ${data.message}`);
-      }
+      window.receiveMessage?.(data);
+    }
+
+    // 👥 Users count
+    if (data.type === "users-count") {
+      window.updateUserCount?.(data.count);
     }
   };
 };
 
-// 🔗 Create peer
 function createPeer(peerId, isInitiator) {
   if (peerId === myId) return;
   if (peerConnections[peerId]) return peerConnections[peerId];
@@ -173,47 +167,48 @@ function createPeer(peerId, isInitiator) {
   return peerConnections[peerId];
 }
 
-// 💬 Channel
 function setupChannel(peerId, channel) {
   dataChannels[peerId] = channel;
 
   channel.onopen = () => {
-    console.log("🟢 Connected:", peerId);
-
-    if (typeof window !== "undefined") {
-      window.onConnected?.();
-    }
+    window.onConnected?.();
   };
 
   channel.onmessage = (e) => {
-    if (typeof window !== "undefined") {
-      window.receiveMessage?.(`P2P: ${e.data}`);
-    }
+    const data = JSON.parse(e.data);
+    window.receiveMessage?.(data);
   };
 
   channel.onclose = () => {
-    console.log("❌ Disconnected:", peerId);
     delete dataChannels[peerId];
     delete peerConnections[peerId];
   };
 }
 
-// 📤 Send message (UPDATED)
+// ✅ FINAL SEND (DEDUP SAFE)
 export const sendMessage = (msg) => {
-  // 🟢 Broadcast via server (ALL users)
+  const id = Date.now() + Math.random();
+
+  // Broadcast
   if (socket?.readyState === WebSocket.OPEN) {
     socket.send(
       JSON.stringify({
         type: "chat",
         message: msg,
+        id,
       })
     );
   }
 
-  // ⚡ Optional: send via WebRTC
+  // P2P
   Object.values(dataChannels).forEach((channel) => {
     if (channel.readyState === "open") {
-      channel.send(msg);
+      channel.send(
+        JSON.stringify({
+          message: msg,
+          id,
+        })
+      );
     }
   });
 };
